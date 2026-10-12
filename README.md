@@ -1,18 +1,18 @@
 # Marshal
 
-**A Python job queue built from scratch to explore reliable background processing, concurrency, and fault tolerance.**
+A job queue built from scratch in Python.
 
-Applications often need to perform work that shouldn't block the main request-response cycle: sending emails, processing uploaded files, generating reports, or running computationally expensive tasks.
+I'm building Marshal to understand how background job systems actually work, from the basics of adding and processing jobs to the harder problems of concurrency, persistence, and failure recovery.
 
-A job queue solves this by separating the application that submits work from the workers that execute it.
+A lot of applications need to do work in the background: sending emails, processing files, generating reports, or running tasks that take too long to finish during a normal web request. Instead of making users wait, the application puts these tasks into a queue, and workers process them separately.
 
-Marshal is my attempt to understand and build that infrastructure from the ground up. It starts with a small in-memory queue and will gradually evolve into a persistent, fault-tolerant background job system.
+That sounds straightforward, but there are some interesting problems underneath. What if a worker crashes halfway through a job? What if two workers try to claim the same job? What if the application restarts while jobs are still waiting?
 
-The interesting challenge isn't getting jobs to run when everything works. It's figuring out what happens when things go wrong: workers crash, jobs fail, processes restart, and multiple workers compete for the same task.
+Marshal is my way of working through those questions by implementing the system myself, one piece at a time.
 
-## How It Works
+## How it works
 
-The basic job lifecycle looks like this:
+The basic idea is simple:
 
 ```text
 Application
@@ -29,7 +29,7 @@ Application
     |
     | claim()
     v
-  Worker
+   Worker
     |
     | execute handler
     v
@@ -39,44 +39,22 @@ Application
  Job Succeeded
 ```
 
-An application submits a job containing a task name and its payload. A worker claims the job, looks up the appropriate handler, executes it, and marks the job as completed.
+An application submits a job with a task name and some data (the payload). A worker claims the job, finds the function responsible for handling it, runs that function, and marks the job as completed.
 
-The current implementation runs entirely in memory. It provides a foundation for introducing persistence, concurrency, retries, and failure recovery.
+Right now, the queue runs entirely in memory, and the demo processes jobs sequentially in one Python process. There's no database or separate worker service yet.
 
-## Current Implementation
+I'm starting small so I can understand each part before adding more complexity.
 
-Marshal currently includes:
+## What's implemented
 
-- **Job submission:** Add jobs to an in-memory queue with a task name and payload.
-- **Job claiming:** Retrieve queued jobs for processing.
-- **Job completion:** Mark successfully processed jobs as completed.
-- **Status tracking:** Count jobs by their status.
-- **Worker demonstration:** Execute jobs through registered task handlers.
-- **Automated tests:** Verify the queue's core behavior.
+- [x] In-memory queue with job submission, claiming, and completion
+- [x] Job status tracking
+- [x] Basic worker loop that executes jobs using registered handlers
+- [x] Automated tests for the core queue functionality
 
-The current demo runs a worker loop sequentially in a single Python process. It demonstrates the basic job lifecycle rather than a fully independent or distributed worker system.
+The current version demonstrates the basic job lifecycle. Persistence, concurrent workers, and crash recovery are still planned.
 
-### Example
-
-```python
-from marshal_queue.memory_queue import InMemoryQueue
-
-queue = InMemoryQueue()
-
-queue.enqueue("send_email", {"to": "sara@example.com"})
-
-job = queue.claim()
-
-if job is not None:
-    print(job.task_name, job.payload)
-    queue.complete(job.id)
-```
-
-This example submits a job, claims it, inspects its contents, and marks it as completed.
-
-Actual task execution is handled separately by the worker's registered functions.
-
-## Getting Started
+## Try it yourself
 
 ### 1. Clone the repository
 
@@ -85,48 +63,67 @@ git clone https://github.com/ayazayan/marshal.git
 cd marshal
 ```
 
-### 2. Create a virtual environment
+### 2. Set up Python
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+pip install -r requirements-dev.txt
 ```
 
-On Windows:
+On Windows, activate the virtual environment with:
 
 ```powershell
 .venv\Scripts\activate
 ```
 
-### 3. Install development dependencies
-
-```bash
-pip install -r requirements-dev.txt
-```
-
-### 4. Run the demo
+### 3. Run the demo
 
 ```bash
 python demo.py
 ```
 
-The demo submits three jobs:
+The demo adds three jobs to the queue:
 
 1. Send an email to Sara.
 2. Resize an image.
 3. Send an email to Omar.
 
-A worker claims each job, executes the corresponding handler, and marks it as completed.
+The worker picks up each job, calls the appropriate function, and marks it as completed.
 
-The handlers currently simulate these operations by printing messages. No actual emails are sent or images modified.
+The email and image functions are simulated for now. They print messages rather than sending actual emails or modifying files.
 
-### 5. Run the tests
+### 4. Run the tests
 
 ```bash
 python -m pytest
 ```
 
-## Project Structure
+## A small example
+
+Here's what using the queue looks like:
+
+```python
+from marshal_queue.memory_queue import InMemoryQueue
+
+queue = InMemoryQueue()
+
+# Add a job
+queue.enqueue("send_email", {"to": "sara@example.com"})
+
+# Claim the next available job
+job = queue.claim()
+
+if job is not None:
+    print(job.task_name, job.payload)
+
+    # Mark the job as completed
+    queue.complete(job.id)
+```
+
+This example shows the queue operations themselves. In the full demo, a handler function performs the simulated task before the worker marks it as completed.
+
+## Project structure
 
 ```text
 marshal/
@@ -138,78 +135,69 @@ marshal/
 └── README.md
 ```
 
-| Component | Purpose |
-|---|---|
-| `marshal_queue/` | Core queue implementation |
-| `tests/` | Automated tests |
-| `demo.py` | Example worker and job execution |
-| `requirements-dev.txt` | Development dependencies |
+- `marshal_queue/` contains the queue implementation.
+- `tests/` contains automated tests.
+- `demo.py` demonstrates how jobs are submitted and processed.
+- `requirements-dev.txt` lists development dependencies.
 
-The Python package is named `marshal_queue` rather than `marshal` to avoid conflicting with Python's built-in `marshal` module.
+The package is called `marshal_queue` rather than `marshal` because Python already has a built-in module named `marshal`.
 
-## Roadmap
+## What's next
 
-Marshal is being developed incrementally. Each milestone introduces a new engineering problem to solve.
+I'm building Marshal in stages. The next steps focus on making it more reliable and eventually supporting multiple workers.
 
-- [x] **In-memory queue:** Implement job submission, claiming, completion, and status tracking.
-- [x] **Basic worker:** Demonstrate job execution through registered handlers.
-- [x] **Initial tests:** Validate the core queue operations.
-- [ ] **PostgreSQL persistence:** Store jobs durably so queued work survives application restarts.
-- [ ] **Concurrent workers:** Coordinate multiple workers without allowing the same queued job to be claimed simultaneously.
-- [ ] **Retries and failure handling:** Retry failed jobs with configurable policies and move repeatedly failing jobs to a dead-letter queue.
-- [ ] **Worker crash recovery:** Detect abandoned jobs and make them eligible for processing again.
-- [ ] **HTTP API:** Expose job submission, status inspection, and management through an API.
-- [ ] **Monitoring dashboard:** Visualize queue activity, job states, failures, and worker health.
-- [ ] **Performance and reliability testing:** Measure throughput and latency, simulate crashes, and test concurrent execution.
+- [ ] **PostgreSQL storage:** Move jobs out of memory so they survive application restarts.
+- [ ] **Concurrent workers:** Allow multiple workers to process jobs safely without claiming the same queued job at the same time.
+- [ ] **Retries:** Retry failed jobs with backoff and move jobs that repeatedly fail into a dead-letter queue.
+- [ ] **Crash recovery:** Detect jobs abandoned by crashed workers and make them available again.
+- [ ] **HTTP API:** Add endpoints for submitting jobs and checking their status.
+- [ ] **Dashboard:** Build a simple interface for viewing queued, running, completed, and failed jobs.
+- [ ] **Benchmarks and failure testing:** Measure performance and test how the system behaves under concurrency and crashes.
 
-## Engineering Challenges
+## Problems I want to solve
 
-Building a reliable job queue raises questions that go beyond storing and retrieving tasks.
+These are some of the questions guiding the project as I build out the next stages.
 
-### What happens if a worker crashes?
+### What if two workers claim the same job?
 
-A job shouldn't remain stuck forever because the worker responsible for it disappeared.
+With multiple workers running, claiming a job needs to be atomic. Otherwise, two workers could pick up the same job before either one updates its status.
 
-Future versions will explore leases, timeouts, and recovery mechanisms that allow abandoned jobs to be processed again.
+I plan to explore PostgreSQL transactions and row-level locking to handle this.
 
-### How do multiple workers avoid claiming the same job?
+### What if a worker crashes?
 
-When several workers access the same queue, claiming a job must be atomic.
+Suppose a worker claims a job and crashes before finishing it. Without a recovery mechanism, that job could remain stuck.
 
-The PostgreSQL implementation will explore transactions and locking mechanisms to coordinate concurrent workers.
+One approach I want to implement is a lease system, where a worker claims a job for a limited period. If the lease expires without completion, the job can become available again.
 
-### What happens when a job fails?
+### What if a job fails?
 
-Some failures are temporary. Others require investigation.
+Some failures are temporary, like a network request timing out. Others won't be fixed by trying again.
 
-Retry policies, exponential backoff, and dead-letter queues will help manage failures without endlessly retrying jobs that cannot succeed.
+I want to add retry limits, exponential backoff, and a dead-letter queue so failed jobs can be handled without retrying forever.
 
-### Can a job execute more than once?
+### What if a job runs twice?
 
-A worker might complete an external operation but crash before recording that the job succeeded.
+A worker could finish sending an email but crash before recording that the job succeeded. When the system recovers, it might run that job again.
 
-Recovering the job could cause the operation to run again.
+This is one reason I'm interested in at-least-once delivery and idempotency. I want to understand how real systems handle duplicate execution rather than assuming every job will run exactly once.
 
-Marshal will explore at-least-once delivery semantics and idempotent handlers to understand and manage this trade-off.
+### How do I know the queue is reliable?
 
-### How can reliability be measured?
+Unit tests are a starting point, but they don't tell the whole story.
 
-Passing unit tests doesn't guarantee that a system behaves correctly under concurrency or failure.
+As the project grows, I want to test concurrent workers, simulate crashes at different points in the job lifecycle, and measure throughput and latency.
 
-Future testing will include concurrent execution, failure injection, throughput measurements, and recovery scenarios.
+These are design goals for future versions, not features the current implementation already supports.
 
-These capabilities are planned rather than implemented. The current version focuses on establishing a small, understandable foundation.
+## Why I started this project
 
-## Why I'm Building Marshal
+I've used Python to build applications, but I wanted to understand more of what happens behind the scenes.
 
-I wanted to understand the systems behind background tasks rather than treating job queues as black boxes.
+Job queues seemed like a good place to start because they connect several areas of software engineering that interest me: databases, concurrency, system design, and fault tolerance.
 
-Building one from scratch gives me the opportunity to explore state management, concurrency, database transactions, fault tolerance, and distributed systems through practical implementation.
+Rather than jumping straight into an existing queue framework, I decided to build a small one myself and gradually add the features that make these systems reliable.
 
-I'm intentionally developing Marshal in stages. Each feature introduces a specific engineering problem to solve, test, and document.
+I don't expect the first version to handle everything. The point is to understand why each new feature is needed, what trade-offs it introduces, and how to test whether it actually works.
 
-The long-term goal is to build a system whose reliability can be explained and demonstrated, not just assumed.
-
----
-
-Marshal is an ongoing engineering project. Features are being added incrementally, with an emphasis on understanding the design decisions and trade-offs behind each implementation.
+I'll keep updating the project as I build and learn more.
