@@ -21,3 +21,23 @@ class InMemoryQueue:
     def count(self, state):
         # How many jobs are in a given state, like "queued"?
         return sum(1 for job in self.jobs.values() if job.state == state)
+
+    def claim(self):
+        # A worker calls this to get the next job. We hand out the oldest
+        # waiting job and mark it "running" right away, so the next worker
+        # who asks can't get the same one. If nothing is waiting, we return
+        # None, which just means "no work right now".
+        for job in self.jobs.values():
+            if job.state == "queued":
+                job.state = "running"
+                return job
+        return None
+
+    def complete(self, job_id):
+        # A worker calls this when it has finished a job. Only a job that is
+        # currently "running" can be completed. Completing a job nobody
+        # picked up would mean something went wrong, so we raise an error.
+        job = self.jobs[job_id]
+        if job.state != "running":
+            raise ValueError("Only a running job can be completed.")
+        job.state = "succeeded"
